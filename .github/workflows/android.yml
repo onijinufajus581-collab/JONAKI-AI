@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,7 +18,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip
-          unzip -o JONAKI_AI_TERMUX_PROJECT.zip -d .
+          mkdir extracted
+          unzip -o JONAKI_AI_TERMUX_PROJECT.zip -d extracted
+          APP_BUILD=$(find extracted -path '*/app/build.gradle' | head -n 1)
+          if [ -z "$APP_BUILD" ]; then
+            echo "Could not find app/build.gradle in ZIP"
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$(dirname "$APP_BUILD")")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -30,10 +34,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK
-        run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '15859902'
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -41,12 +46,11 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK
-        run: |
-          cd JONAKI_AI_TERMUX_PROJECT
-          gradle assembleDebug
+        run: gradle -p "$PROJECT_DIR" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JONAKI-AI-APK
-          path: JONAKI_AI_TERMUX_PROJECT/app/build/outputs/apk/debug/*.apk
+          path: extracted/**/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
